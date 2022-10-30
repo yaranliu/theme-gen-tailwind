@@ -1,0 +1,34 @@
+{
+  "outFile" : "theme.scss",
+  "colorModel" : "hsl",
+  "classes" : ["bg", "text", "accent", "outline"],
+  "tailwindColorPaletteFile" : "tailwind-color-palette.scss", 
+  "generateRawValues": true,
+  "tailwind" : {
+    "colors": ["all", "indigo", "rose", "slate"] 
+  } ,
+  "theme" :[
+  {
+    "name": "primary",
+    "var": "violet"
+  },
+  {
+    "name" : "secondary",
+    "H": {
+      "base" : 100,
+      "min" : 90,
+      "max" : 120
+    },
+    "S": {
+      "base" : 80,
+      "min" : 50,
+      "max" : 99
+    },
+    "L": {
+      "base" : 50,
+      "min" : 25,
+      "max" : 80
+    }
+  }
+]
+}
