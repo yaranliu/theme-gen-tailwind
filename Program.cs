@@ -1,77 +1,110 @@
 ﻿using Newtonsoft.Json;
 using ThemeGenerator;
 
-Console.ForegroundColor = ConsoleColor.Green;
-Console.WriteLine("Theme Generator");
-Console.ForegroundColor = ConsoleColor.White;
+string inFile;
+string outFile;
+string inPath;
+string outPath;
 
-Console.WriteLine(args[0]);
+inFile = "theme.json";
+outFile = "theme.scss";
 
-var inFile = "theme.json";
+inPath = Path.Combine(Directory.GetCurrentDirectory(), inFile);
+outPath = Path.Combine(Directory.GetCurrentDirectory(), outFile);
 
-var path = Path.Combine(Directory.GetCurrentDirectory(), inFile);
-if (File.Exists(path))
+Utility.PrintInfo("Theme Generator");
+
+if (args.Length > 0)
 {
-    try
+    if (args[0] == "-h" || args[0] == "-H")
     {
-        var configuration = JsonConvert.DeserializeObject<ThemeConfiguration>(File.ReadAllText(path));
-        if (configuration == null)
+        Utility.PrintHelp();
+        Environment.Exit(0);
+    }
+    else
+    {
+        inPath = args[0];
+        if (!File.Exists(inPath))
         {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine("Configuration error");
+            Utility.PrintError($"{inPath} could not be located");
+            Environment.Exit(0);
         }
-        else
+
+        if (args.Length > 1)
         {
-            // Create palette based on Tailwind colors
-            var palette = new Dictionary<string, string>();
+            outPath = Path.Combine(Directory.GetCurrentDirectory(), args[1]);
+        }    
+    }
+    
+}
 
-            var tailwindPath = Path.Combine(Directory.GetCurrentDirectory(), configuration.TailwindColorPaletteFile);
-            var tailwindLines = File.ReadLines(tailwindPath).ToArray();
-            foreach (var tailwindLine in tailwindLines)
+
+Utility.PrintInfo($"INPUT  : {inPath}");
+Utility.PrintInfo($"OUTPUT : {outPath}");
+
+try
+{
+    var configuration = JsonConvert.DeserializeObject<ThemeConfiguration>(File.ReadAllText(inPath));
+    if (configuration == null) Utility.PrintError("Configuration error");
+    else
+    {
+        // Create palette based on Tailwind colors
+        var palette = new Dictionary<string, string>();
+
+        foreach (var tailwindColor in Theme.TailwindPalette)
+        {
+            if (tailwindColor.Variants != null)
             {
-                if (!string.IsNullOrWhiteSpace(tailwindLine))
+                foreach (var variant in tailwindColor.Variants)
                 {
-                    var ta = tailwindLine.Replace(';', ' ').Split(':');
-                    palette.Add(ta[0].Trim(), ta[1].Trim());    
-                }
+                    palette.Add($"${tailwindColor.Name}-{variant.Name}", $"{variant.Value}" );
+                }    
             }
+        }
             
-            var colorGroups = new List<ColorGroup>();
-            ColorDefinition cd;
+        var colorGroups = new List<ColorGroup>();
+        ColorDefinition cd;
 
-            var previousKey = "";
+        if (configuration.Tailwind != null && configuration.Tailwind.Colors != null)
+        {
             if (configuration.Tailwind.Colors.Contains("all"))
             {
-                var cg = new ColorGroup("", true, true);
-                foreach (var p in palette)
+                foreach (var paletteColor in Theme.TailwindPalette)
                 {
-                    var key = p.Key[1..].Split("-")[0];
-                    var cName = p.Key[1..];
-                    if (key != previousKey) cg = new ColorGroup(p.Key, false, true);
-                    cg.List.Add(new ColorDefinition($"{cName}", $"{cName}", true));
-                    colorGroups.Add(cg);
-                    previousKey = key;
-                } 
+                    if (paletteColor.Name != null && paletteColor.Variants != null)
+                    {
+                        var colorGroup = new ColorGroup(paletteColor.Name, false, true);
+                        foreach (var variant in paletteColor.Variants)
+                        {
+                            colorGroup.List.Add(new ColorDefinition($"{paletteColor.Name}-{variant.Name}", $"{paletteColor.Name}-{variant.Name}", true ));
+                        }
+                        colorGroups.Add(colorGroup);    
+                    }
+                }
             }
             else
             {
                 foreach (var twc in configuration.Tailwind.Colors)
                 {
-                    if (palette.ContainsKey($"${twc}-50"))
+                    var paletteColor = Theme.TailwindPalette.FirstOrDefault(p => p.Name == twc.ToLower());
+                    if (paletteColor != null && paletteColor.Name != null && paletteColor.Variants != null)
                     {
-                        var colorGroup = new ColorGroup(twc, false, true);
-                        for (var i = 0; i < 10; i++)
+                        var colorGroup = new ColorGroup(paletteColor.Name, false, true);
+                        foreach (var variant in paletteColor.Variants)
                         {
-                            var variation = i == 0 ? "50" : (i * 100).ToString();
-                            colorGroup.List.Add(new ColorDefinition($"{twc}-{variation}", $"{twc}-{variation}", true));
-                        }    
+                            colorGroup.List.Add(new ColorDefinition($"{paletteColor.Name}-{variant.Name}", $"{paletteColor.Name}-{variant.Name}", true ));
+                        }
                         colorGroups.Add(colorGroup);
                     }
-                
                 }    
-            }
+            }    
+        }
+
+        
             
-            // Theme colors
+        // Theme colors
+        if (configuration.Theme != null)
+        {
             foreach (var colorSource in configuration.Theme)
             {
                 var custom = string.IsNullOrWhiteSpace(colorSource.Var);
@@ -79,126 +112,143 @@ if (File.Exists(path))
                 // Add missing TWC
                 if (!custom && colorGroups.FirstOrDefault(cg => cg.Name == colorSource.Var) == null)
                 {
-                    if (palette.ContainsKey($"${colorSource.Var}-50"))
+                    if (colorSource.Var != null)
                     {
-                        var twcgGroup = new ColorGroup(colorSource.Var, false, true);
-                        for (var i = 0; i < 10; i++)
+                        var paletteColor = Theme.TailwindPalette.FirstOrDefault(p => p.Name == colorSource.Var.ToLower());
+                        if (paletteColor != null && paletteColor.Name != null && paletteColor.Variants != null)
                         {
-                            var variation = i == 0 ? "50" : (i * 100).ToString();
-                            twcgGroup.List.Add(new ColorDefinition($"{colorSource.Var}-{variation}", $"{colorSource.Var}-{variation}", true));
+                            var cg = new ColorGroup(paletteColor.Name, false, true);
+                            foreach (var variant in paletteColor.Variants)
+                            {
+                                cg.List.Add(new ColorDefinition($"{paletteColor.Name}-{variant.Name}", $"{paletteColor.Name}-{variant.Name}", true ));
+                            }
+                            colorGroups.Add(cg);
                         }    
-                        colorGroups.Add(twcgGroup);
                     }
+                    
                 }
-                
-                var colorGroup = new ColorGroup(colorSource.Name, custom,  false);
-                colorGroups.Add(colorGroup);
-                if (!custom) // Tailwind class
+
+                if (colorSource.Name != null)
                 {
-                    cd = new ColorDefinition(colorSource.Name, $"{colorSource.Var}-500");
-                    colorGroup.List.Add(cd);
-                    palette.Add($"${cd.ClassName}", palette[$"${cd.VariableName}" ]);
-                    cd = new ColorDefinition($"{colorSource.Name}-50", $"{colorSource.Var}-50");
-                    palette.Add($"${cd.ClassName}", palette[$"${cd.VariableName}" ]);
-                    colorGroup.List.Add(cd);
-                    for (var i = 1; i < 10; i++)
+                    var colorGroup = new ColorGroup(colorSource.Name, custom,  false);
+                    colorGroups.Add(colorGroup);
+                    if (!custom) // Tailwind class
                     {
-                        cd = new ColorDefinition($"{colorSource.Name}-{i * 100}",
-                            $"{colorSource.Var}-{i * 100}");
+                        cd = new ColorDefinition(colorSource.Name, $"{colorSource.Var}-500");
                         colorGroup.List.Add(cd);
                         palette.Add($"${cd.ClassName}", palette[$"${cd.VariableName}" ]);
-                    }
-                }
-                else // Custom class
-                {
-                    var hueLowerScale = (float)(colorSource.H.Base - colorSource.H.Min) / 5;
-                    var hueUpperScale = (float)(colorSource.H.Max - colorSource.H.Base) / 4;
-
-                    var satLowerScale = (float)(colorSource.S.Base - colorSource.S.Min) / 5;
-                    var satUpperScale = (float)(colorSource.S.Max - colorSource.S.Base) / 4;
-
-                    var lighterScale  = (float)(colorSource.L.Max - colorSource.L.Base) / 5;
-                    var darkerScale = (float)(colorSource.L.Base - colorSource.L.Min) / 4;
-
-                    cd = new ColorDefinition($"{colorSource.Name}", colorSource.H.Base, colorSource.S.Base,
-                        colorSource.L.Base);
-                    colorGroup.List.Add(cd);
-                    palette.Add($"${cd.ClassName}", cd.ToRgbString());
-                    
-                    for (var i = 0; i < 10; i++)
-                    {
-                        var index = 5 - i;
-                        int h;
-                        int s;
-                        int l;
-                        if (index == 0)
-                        {
-                            h = colorSource.H.Base;
-                            s = colorSource.S.Base;
-                            l = colorSource.L.Base;
-                        }
-                        else if (index > 0)
-                        {
-                            h = colorSource.H.Base - (int)(index * hueLowerScale);
-                            s = colorSource.S.Base - (int)(index * satLowerScale);
-                            l = colorSource.L.Base + (int)(index * lighterScale);
-                        }
-                        else
-                        {
-                            h = colorSource.H.Base - (int)(index * hueUpperScale);
-                            s = colorSource.S.Base - (int)(index * satUpperScale);
-                            l = colorSource.L.Base + (int)(index * darkerScale);
-                        }
-
-                        var variation = i == 0 ? "50" : (i * 100).ToString();
-                        cd = new ColorDefinition($"{colorSource.Name}-{variation}", h, s, l);
+                        cd = new ColorDefinition($"{colorSource.Name}-50", $"{colorSource.Var}-50");
+                        palette.Add($"${cd.ClassName}", palette[$"${cd.VariableName}" ]);
                         colorGroup.List.Add(cd);
-                        palette.Add($"${cd.ClassName}", cd.ToRgbString());
-                    }
-                }
-            }
-            
-            var outPath = Path.Combine(Directory.GetCurrentDirectory(), configuration.OutFile);
-            await using StreamWriter fileStream = new(outPath);
-            await fileStream.WriteLineAsync("// Generated by TCG");
-            string line;
-            
-            foreach (var colorGroup in colorGroups)
-            {
-                var maxLength = colorGroup.Name.Length + 5;
-                await fileStream.WriteLineAsync($"\r\n// {colorGroup.Name.ToUpper()} Color");
-                foreach (var colorDefinition in colorGroup.List)
-                {
-                    line = $"${colorDefinition.ClassName}".PadRight(maxLength) + ": ";
-                    if (colorGroup.Custom)
-                    {
-                        var hslString = $"HSL({colorDefinition.Hsl.Item1.ToString()}, {colorDefinition.Hsl.Item2}%, {colorDefinition.Hsl.Item3}%);";
-                        var rgbString = $"{colorDefinition.ToRgbString()};"; 
-
-                        if (configuration.ColorModelIsHsl) line += $"{hslString} // {rgbString}";
-                        else line += $"{rgbString} // {hslString}";
-                    }
-                    else
-                    {
-                        var paletteColor = palette["$" + colorDefinition.VariableName];
-                        if (configuration.GenerateRawValues || colorGroup.UseRawValue)
+                        for (var i = 1; i < 10; i++)
                         {
-                            line += $"{paletteColor}; // {colorDefinition.ClassName}";    
+                            cd = new ColorDefinition($"{colorSource.Name}-{i * 100}",
+                                $"{colorSource.Var}-{i * 100}");
+                            colorGroup.List.Add(cd);
+                            palette.Add($"${cd.ClassName}", palette[$"${cd.VariableName}" ]);
                         }
-                        else line +=  $"{colorDefinition.VariableName}; // {paletteColor}";
                     }
-                
-                    await fileStream.WriteLineAsync(line);
+                    else // Custom class
+                    {
+                        if (colorSource.H != null && colorSource.S != null && colorSource.L != null)
+                        {
+                            var hueLowerScale = (float)(colorSource.H.Base - colorSource.H.Min) / 5;
+                            var hueUpperScale = (float)(colorSource.H.Max - colorSource.H.Base) / 4;
+
+                            var satLowerScale = (float)(colorSource.S.Base - colorSource.S.Min) / 5;
+                            var satUpperScale = (float)(colorSource.S.Max - colorSource.S.Base) / 4;
+
+                            var lighterScale  = (float)(colorSource.L.Max - colorSource.L.Base) / 5;
+                            var darkerScale = (float)(colorSource.L.Base - colorSource.L.Min) / 4;
+
+                            cd = new ColorDefinition($"{colorSource.Name}", colorSource.H.Base, colorSource.S.Base,
+                                colorSource.L.Base);
+                            colorGroup.List.Add(cd);
+                            palette.Add($"${cd.ClassName}", cd.ToRgbString());
+                    
+                            for (var i = 0; i < 10; i++)
+                            {
+                                var index = 5 - i;
+                                int h;
+                                int s;
+                                int l;
+                                if (index == 0)
+                                {
+                                    h = colorSource.H.Base;
+                                    s = colorSource.S.Base;
+                                    l = colorSource.L.Base;
+                                }
+                                else if (index > 0)
+                                {
+                                    h = colorSource.H.Base - (int)(index * hueLowerScale);
+                                    s = colorSource.S.Base - (int)(index * satLowerScale);
+                                    l = colorSource.L.Base + (int)(index * lighterScale);
+                                }
+                                else
+                                {
+                                    h = colorSource.H.Base - (int)(index * hueUpperScale);
+                                    s = colorSource.S.Base - (int)(index * satUpperScale);
+                                    l = colorSource.L.Base + (int)(index * darkerScale);
+                                }
+
+                                var variation = i == 0 ? "50" : (i * 100).ToString();
+                                cd = new ColorDefinition($"{colorSource.Name}-{variation}", h, s, l);
+                                colorGroup.List.Add(cd);
+                                palette.Add($"${cd.ClassName}", cd.ToRgbString());    
+                            }
+                    
+                        }
+                    }
                 }
-
-                Dictionary<string, string> classMap = new Dictionary<string, string>()
+                
+            }
+        }
+        
+            
+            
+        // OUTPUT
+        await using StreamWriter fileStream = new(outPath);
+        await fileStream.WriteLineAsync("// Generated by TCG");
+        string line;
+            
+        foreach (var colorGroup in colorGroups)
+        {
+            var maxLength = colorGroup.Name.Length + 5;
+            await fileStream.WriteLineAsync($"\r\n// {colorGroup.Name.ToUpper()} Color");
+            foreach (var colorDefinition in colorGroup.List)
+            {
+                line = $"${colorDefinition.ClassName}".PadRight(maxLength) + ": ";
+                if (colorGroup.Custom)
                 {
-                    { "bg", "background-color" },
-                    { "text", "color" },
-                    { "accent", "accent-color" },
-                    { "outline", "outline-color" },
-                };
+                    var hslString = $"HSL({colorDefinition.Hsl.Item1.ToString()}, {colorDefinition.Hsl.Item2}%, {colorDefinition.Hsl.Item3}%);";
+                    var rgbString = $"{colorDefinition.ToRgbString()};"; 
 
+                    if (configuration.ColorModelIsHsl) line += $"{hslString} // {rgbString}";
+                    else line += $"{rgbString} // {hslString}";
+                }
+                else
+                {
+                    var paletteColor = palette["$" + colorDefinition.VariableName];
+                    if (configuration.GenerateRawValues || colorGroup.UseRawValue)
+                    {
+                        line += $"{paletteColor}; // {colorDefinition.ClassName}";    
+                    }
+                    else line +=  $"{colorDefinition.VariableName}; // {paletteColor}";
+                }
+                
+                await fileStream.WriteLineAsync(line);
+            }
+
+            Dictionary<string, string> classMap = new Dictionary<string, string>()
+            {
+                { "bg", "background-color" },
+                { "text", "color" },
+                { "accent", "accent-color" },
+                { "outline", "outline-color" },
+            };
+
+            if (configuration.Classes != null)
+            {
                 foreach (var colorClass in configuration.Classes)
                 {
                     await fileStream.WriteLineAsync($"\r\n// {colorClass.ToUpper()} Classes for {colorGroup.Name.ToUpper()}");
@@ -210,19 +260,14 @@ if (File.Exists(path))
                         line = $".{cName} {{ {classMap[colorClass]}: {cValue} }}";
                         await fileStream.WriteLineAsync(line);
                     }
-                }
+                }    
             }
+            
         }
     }
-    catch (Exception exception)
-    {
-        Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine("An error occured");
-        Console.WriteLine(exception);
-    }
 }
-else
+catch (Exception exception)
 {
-    Console.ForegroundColor = ConsoleColor.Red;
-    Console.WriteLine("colors.json file not found");
+    Utility.PrintError("An error occured");
+    Utility.PrintError(exception);
 }
